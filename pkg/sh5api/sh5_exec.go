@@ -14,6 +14,9 @@ type ProcName string
 var (
 	GGroups     ProcName = "GGroups"     // Получить справочник Товарная группа
 	GGroupsTree ProcName = "GGroupsTree" // Получить дерево Товарная группа
+	UpdGGroup   ProcName = "UpdGGroup"   // Обновление Торговой группы
+	InsGGroup   ProcName = "InsGGroup"   // Создание Торговой группы
+	DelGGroup   ProcName = "DelGGroup"   // Создание Торговой группы
 )
 
 // Sh5ExecInput - структура таблицы в запросе /api/sh5exec
@@ -73,18 +76,20 @@ type Field struct {
 type FieldPath string
 
 var (
-	FIELD_1_RID  FieldPath = "1"         // RID
-	FIELD_4_GUID FieldPath = "4"         // GUID
-	FIELD_42     FieldPath = "42"        //
-	FIELD_3      FieldPath = "3"         // Наименование
-	FIELD_209_1  FieldPath = "209#1\\1"  // RID группы предка
-	FIELD_209_4  FieldPath = "209#1\\4"  // GUID группы предка
-	FIELD_209_42 FieldPath = "209#1\\42" //
-	FIELD_209_3  FieldPath = "209#1\\3"  // Наименование
-	FIELD_239    FieldPath = "239"       //
-	FIELD_106_1  FieldPath = "106\\1"    // null
-	FIELD_106_3  FieldPath = "106\\3"    // null
-	FIELD_6      FieldPath = "6"         // null
+	FIELD_1_RID               FieldPath = "1"                // RID
+	FIELD_4_GUID              FieldPath = "4"                // GUID
+	FIELD_42                  FieldPath = "42"               //
+	FIELD_3_NAME              FieldPath = "3"                // Наименование
+	FIELD_6_RidDst            FieldPath = "6\\RidDst"        // 6\\RidDst
+	FIELD_209_1_RID_PARENT    FieldPath = "209#1\\1"         // RID группы предка
+	FIELD_209_4_GUID_PARENT   FieldPath = "209#1\\4"         // GUID группы предка
+	FIELD_209_42              FieldPath = "209#1\\42"        //
+	FIELD_209_3_NAME_PARENT   FieldPath = "209#1\\3"         // Наименование
+	FIELD_209_6_RidDst_PARENT FieldPath = "209#1\\6\\RidDst" // 209#1\\6\\RidDst
+	FIELD_239                 FieldPath = "239"              //
+	FIELD_106_1               FieldPath = "106\\1"           // null
+	FIELD_106_3               FieldPath = "106\\3"           // null
+	FIELD_6                   FieldPath = "6"                // null
 )
 
 // FieldType - тип поля

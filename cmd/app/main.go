@@ -2,14 +2,22 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/t88code/sh5-dublicator/dbsheme"
 	"github.com/t88code/sh5-dublicator/domain"
 	"github.com/t88code/sh5-dublicator/internal/comparer"
 	"github.com/t88code/sh5-dublicator/internal/getter"
+	"github.com/t88code/sh5-dublicator/internal/repository/sqlite"
 	"github.com/t88code/sh5-dublicator/internal/saver"
+	"github.com/t88code/sh5-dublicator/internal/syncer"
+	"github.com/t88code/sh5-dublicator/internal/utils"
 	"github.com/t88code/sh5-dublicator/pkg/config"
 	"github.com/t88code/sh5-dublicator/pkg/sh5api"
 	"log/slog"
 	"os"
+	"time"
 )
 
 func checkError(err error) {
@@ -19,31 +27,64 @@ func checkError(err error) {
 	}
 }
 
-func main() {
+const DbSqliteFileName = "db.db"
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+func main() {
+	lvl := new(slog.LevelVar)
+	lvl.Set(slog.LevelDebug)
+
+	logger := slog.New(
+		slog.NewTextHandler(
+			os.Stdout,
+			&slog.HandlerOptions{
+				Level:     lvl,
+				AddSource: false},
+		))
 
 	var err error
-	ctx := context.Background()
 	cfg, err := config.NewConfig()
 	checkError(err)
+
+	databaseExists := utils.Exists(DbSqliteFileName)
+	if databaseExists {
+		err = os.Remove(DbSqliteFileName)
+		checkError(err)
+	}
+
+	// init DB sqlite connection
+	db, err := sqlx.Connect("sqlite3", DbSqliteFileName)
+	checkError(err)
+	defer db.Close()
+
+	if databaseExists {
+		db.MustExec(dbsheme.GGroupsSrc)
+		db.MustExec(dbsheme.GGroupsDst)
+	}
 
 	if _, err = os.Stat("./json"); os.IsNotExist(err) {
 		err = os.Mkdir("json", 0777)
 		checkError(err)
 	}
 
-	// создаем saver src
-	svSrc, err := saver.New(logger, "src")
-	if err != nil {
-		return
+	folderNameForHttpRequest := time.Now().Format("2006-01-02 15-04-05")
+	if _, err = os.Stat(fmt.Sprintf("./json/%s", folderNameForHttpRequest)); os.IsNotExist(err) {
+		err = os.Mkdir(fmt.Sprintf("./json/%s", folderNameForHttpRequest), 0777)
+		checkError(err)
 	}
 
+	// создаем saver src
+	svSrc, err := saver.New(
+		logger,
+		"src",
+		folderNameForHttpRequest)
+	checkError(err)
+
 	// создаем saver dst
-	svDst, err := saver.New(logger, "dst")
-	if err != nil {
-		return
-	}
+	svDst, err := saver.New(
+		logger,
+		"dst",
+		folderNameForHttpRequest)
+	checkError(err)
 
 	// создаем клиентов для подключения к базам
 	sh5ConfigSrc := &sh5api.Config{
@@ -81,101 +122,73 @@ func main() {
 	gtDst, err := getter.New(sh5ClientDst)
 	checkError(err)
 
-	// создаем comparer
-	cmr, err := comparer.New(logger, gtSrc, gtDst)
-	checkError(err)
-
-	///////////////////
+	// вызываемые процедуры
 	procs := []*domain.ProcSync{
 		{
 			Name: sh5api.GGroupsTree,
 			Head: sh5api.HeadCodeGGROUP,
-			Original: []sh5api.FieldPath{
-				sh5api.FIELD_4_GUID, // 4 GUID Товарнoй группы
-				sh5api.FIELD_209_1,  // 209#1\1 Товарная группа - предок RID предка
-				sh5api.FIELD_3,      // 3 Наименование
-				//sh5api.FIELD_6,      // 6 Атрибуты
+			OriginalForSaveToSql: []sh5api.FieldPath{
+				sh5api.FIELD_1_RID,
+				sh5api.FIELD_4_GUID,
+				sh5api.FIELD_42,
+				sh5api.FIELD_3_NAME,
+				sh5api.FIELD_6_RidDst,
+				sh5api.FIELD_209_1_RID_PARENT,
+				sh5api.FIELD_209_4_GUID_PARENT,
+				sh5api.FIELD_209_42,
+				sh5api.FIELD_209_3_NAME_PARENT,
+				sh5api.FIELD_209_6_RidDst_PARENT,
+				sh5api.FIELD_239,
+				sh5api.FIELD_106_1,
+				sh5api.FIELD_106_3,
+				sh5api.FIELD_6,
 			},
+			OriginalForInsertToDst: []sh5api.FieldPath{
+				sh5api.FIELD_4_GUID,
+				sh5api.FIELD_3_NAME,
+				sh5api.FIELD_209_1_RID_PARENT,
+			},
+			OriginalForUpdateAttrInSrc: []sh5api.FieldPath{
+				sh5api.FIELD_1_RID,
+				sh5api.FIELD_4_GUID,
+				sh5api.FIELD_209_1_RID_PARENT,
+				sh5api.FIELD_3_NAME,
+				sh5api.FIELD_6_RidDst,
+			},
+			OriginalForUpdateInDst: []sh5api.FieldPath{
+				sh5api.FIELD_1_RID,
+				sh5api.FIELD_4_GUID,
+				sh5api.FIELD_209_1_RID_PARENT,
+				sh5api.FIELD_3_NAME,
+				sh5api.FIELD_6_RidDst,
+			},
+			OriginalForDeleteInDst: []sh5api.FieldPath{
+				sh5api.FIELD_1_RID,
+				sh5api.FIELD_4_GUID,
+			},
+			IsActionDoIt: true,
 		},
-		//{
-		//	Name:     "",
-		//	Head:     "",
-		//	Original: nil,
-		//},
-		//sh5api.GGroups,
-		//sh5api.GGroupsTree,
 	}
 
-	compareResult, err := cmr.CompareDictionary(ctx, procs)
+	// создаем репозиторий для сохранения справочников в DB SQLite
+	gGroupsRepository := sqlite.NewGGroupsRepository(db, logger)
+
+	// создаем comparer
+	cmr, err := comparer.New(logger, gtSrc, gtDst, gGroupsRepository)
 	checkError(err)
 
-	if len(compareResult) == 0 {
-		slog.Info("Обновление справочников не требуется")
-		return
-	}
+	ctx := context.Background()
 
-	/////////////////////////
+	// создаем syncer
+	scr, err := syncer.New(
+		logger,
+		cmr,
+		sh5ClientSrc,
+		sh5ClientDst,
+		gGroupsRepository)
+	checkError(err)
 
-	////////////////////////////////////////
-
-	////////////////////////////////////////
-	//dupl, err := sh5dublicator.New(
-	//	sh5ClientSrc,
-	//	sh5ClientDst,
-	//	procNamesForSync)
-	//if err != nil {
-	//	slog.Error(err.Error())
-	//	return
-	//}
-	//
-	//err = dupl.CopyDictionary(ctx)
-	//if err != nil {
-	//	slog.Error(err.Error())
-	//	return
-	//}
-
-	////////////////////////////////////////
-
-	//err = updater.Update(ctx, sh5ClientSrc, sh5ClientDst, compareResults, procNamesForSync)
-	//if err != nil {
-	//	slog.Error(err.Error())
-	//	return
-	//}
-
-	//for _, ref := range refs {
-	//	var req, rep interface{}
-	//
-	//	match, err := comparer.Compare(ctx, string(ref), rep)
-	//	if err != nil {
-	//		slog.Error(err.Error())
-	//		return
-	//	}
-	//
-	//	if !match {
-	//		slog.Info(fmt.Sprintf("Необходимо обновление (%s)", ref))
-	//		///////////////////////
-	//		insGGroupReq := new(sh5api.InsGGroupReq)
-	//		insGGroupRep, err := sh5Client.InsertGGroup(ctx, insGGroupReq)
-	//		if err != nil {
-	//			slog.Error(err.Error())
-	//			return
-	//		}
-	//
-	//		bytes, err := json.Marshal(insGGroupRep)
-	//		if err != nil {
-	//			return
-	//		}
-	//		fmt.Printf("%s", pretty.Pretty(bytes))
-	//
-	//		///////////////////////
-	//	}
-	//
-	//	err = saver.SaveReqRep(context.Background(), string(ref), req, rep)
-	//	if err != nil {
-	//		slog.Error(err.Error())
-	//		return
-	//	}
-	//
-	//}
-
+	// копируем справочники
+	err = scr.SyncDictionary(ctx, procs)
+	checkError(err)
 }

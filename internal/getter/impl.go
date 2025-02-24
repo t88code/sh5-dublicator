@@ -16,8 +16,12 @@ func New(sh5Client sh5api.ClientInterface) (Getter, error) {
 	}, nil
 }
 
+// GetDictionary
+//
+// - получить справочник по названию процедуры
+// - необходимо учитывать, что ProcName должен возвращать справочник, а не выполнять создание/модификацию/удаление
 func (g *getter) GetDictionary(ctx context.Context, procSync domain.ProcSync) (*domain.DictionarySync, error) {
-	sh5ExecRep, err := g.sh5Client.Sh5Exec(ctx, procSync.Name)
+	sh5ExecRep, err := g.sh5Client.Sh5ExecOnlyProcName(ctx, procSync.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -27,6 +31,5 @@ func (g *getter) GetDictionary(ctx context.Context, procSync domain.ProcSync) (*
 		Sh5ExecRep:          sh5ExecRep,
 		TableIndex:          -1,
 		OriginalsNormalized: nil,
-		ValuesNormalized:    nil,
 	}, nil
 }

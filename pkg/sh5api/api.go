@@ -14,10 +14,15 @@ import (
 )
 
 type ClientInterface interface {
-	Sh5Exec(ctx context.Context, procName ProcName) (rep *Sh5ExecRep, err error)
-	GetGGroups(ctx context.Context) (rep *Sh5ExecRep, err error)
-	GetGGroupsTree(ctx context.Context) (rep *Sh5ExecRep, err error)
-	//InsertGGroup(ctx context.Context, original []string, values [][]interface{}) (rep *InsGGroupRep, err error)
+	Sh5ExecOnlyProcName(ctx context.Context, procName ProcName) (rep *Sh5ExecRep, err error)
+	Sh5ExecWithInput(
+		ctx context.Context,
+		procName ProcName,
+		head Head,
+		original []FieldPath,
+		values [][]interface{},
+		status []Sh5ExecStatus,
+	) (rep *Sh5ExecRep, err error)
 }
 
 type Client struct {
@@ -57,7 +62,7 @@ func New(config *Config) (ClientInterface, error) {
 	}, nil
 }
 
-// request Отправка запроса в API XML RK7
+// request Отправка запроса в API SH5
 func (c *Client) request(ctx context.Context, path string, req interface{}, reqName string) ([]byte, error) {
 	reqBody, err := json.Marshal(req)
 	if err != nil {
@@ -99,27 +104,41 @@ func (c *Client) request(ctx context.Context, path string, req interface{}, reqN
 		}
 	}
 
-	var serverError ErrorReply
-	if err = json.Unmarshal(respBody, &serverError); err != nil {
+	var errorReply ErrorReply
+	if err = json.Unmarshal(respBody, &errorReply); err != nil {
 		return nil, err
 	}
 
-	if serverError.ErrorCode > 0 {
+	if errorReply.ErrMessage != "OK" {
+		c.config.Logger.Error("http error",
+			"errorCode", errorReply.ErrorCode,
+			"errMessage", errorReply.ErrMessage,
+			"Version", errorReply.Version,
+			"UserName", errorReply.UserName,
+			"actionName", errorReply.ActionName,
+			"actionType", errorReply.ActionType,
+			"moduleId", errorReply.ErrorInfo.ModuleId,
+			"moduleName", errorReply.ErrorInfo.ModuleName,
+			"errorId", errorReply.ErrorInfo.ErrorId,
+			"statusCode", resp.StatusCode,
+		)
+
 		return nil, &ProcessingError{
-			error:      errors.New(serverError.ErrMessage),
-			ErrorReply: &serverError,
+			error:      errors.New(errorReply.ErrMessage),
+			ErrorReply: &errorReply,
 		}
 	}
+
 	return respBody, nil
 }
 
-func (c *Client) Sh5Exec(ctx context.Context, procName ProcName) (rep *Sh5ExecRep, err error) {
+func (c *Client) Sh5ExecOnlyProcName(ctx context.Context, procName ProcName) (rep *Sh5ExecRep, err error) {
 	req := new(Sh5ExecReq)
 	req.Password = c.config.Password
 	req.UserName = c.config.Username
 	req.ProcName = procName
 
-	respBody, err := c.request(ctx, "/api/sh5exec", &req, string(GGroups))
+	respBody, err := c.request(ctx, "/api/sh5exec", &req, string(procName))
 	if err != nil {
 		return nil, err
 	}
@@ -131,34 +150,35 @@ func (c *Client) Sh5Exec(ctx context.Context, procName ProcName) (rep *Sh5ExecRe
 	return &resp, nil
 }
 
-func (c *Client) GetGGroups(ctx context.Context) (rep *Sh5ExecRep, err error) {
-	return c.Sh5Exec(ctx, GGroups)
-}
+func (c *Client) Sh5ExecWithInput(
+	ctx context.Context,
+	procName ProcName,
+	head Head,
+	original []FieldPath,
+	values [][]interface{},
+	status []Sh5ExecStatus,
+) (rep *Sh5ExecRep, err error) {
 
-func (c *Client) GetGGroupsTree(ctx context.Context) (rep *Sh5ExecRep, err error) {
-	return c.Sh5Exec(ctx, GGroupsTree)
-}
+	req := new(Sh5ExecReq)
+	req.Password = c.config.Password
+	req.UserName = c.config.Username
+	req.ProcName = procName
+	req.Input = append(req.Input, Sh5ExecInput{
+		Head:     head,
+		Original: original,
+		Fields:   nil,
+		Values:   values,
+		Status:   status,
+	})
 
-//func (c *Client) InsertGGroup(ctx context.Context, original []string, values [][]interface{}) (rep *InsGGroupRep, err error) {
-//	req := new(InsGGroupReq)
-//	req.Password = c.config.Password
-//	req.UserName = c.config.Username
-//	req.ProcName = "InsGGroup"
-//	req.Input = append(req.Input, Input{
-//		Head:     HeadGGROUP,
-//		Original: original,
-//		Values:   values,
-//		Status:   []Status{StatusInsert},
-//	})
-//
-//	respBody, err := c.request(ctx, "/api/sh5exec", &req, "InsGGroup")
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	var resp InsGGroupRep
-//	if err = json.Unmarshal(respBody, &resp); err != nil {
-//		return nil, err
-//	}
-//	return &resp, nil
-//}
+	respBody, err := c.request(ctx, "/api/sh5exec", &req, string(procName))
+	if err != nil {
+		return nil, err
+	}
+
+	var resp Sh5ExecRep
+	if err = json.Unmarshal(respBody, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}

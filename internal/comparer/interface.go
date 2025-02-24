@@ -7,5 +7,5 @@ import (
 )
 
 type Comparer interface {
-	CompareDictionary(ctx context.Context, procsSync []*domain.ProcSync) (map[sh5api.ProcName]CompareResult, error)
+	CompareDictionary(ctx context.Context, procsSync []*domain.ProcSync) (map[sh5api.Head]*NormalizedDictionary, error)
 }
